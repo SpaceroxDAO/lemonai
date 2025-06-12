@@ -203,10 +203,14 @@ async function handleMessageUpdate(newValue) {
     case 'browser':
       typeDescription.value = t('lemon.preview.browser');
       typeTitle.value = t('lemon.preview.browsing');
-      browserImageData.value = newValue.meta.json.browser_history_screenshot || '';
+      browserImageData.value = newValue.meta?.json?.browser_history_screenshot || '';
       //TODO sequence browser screenshot display
-      let lengthBrowserHistory = newValue.meta.json.browser_history.length;
-      fileName.value = newValue.meta.json.browser_history[lengthBrowserHistory-1].url.split('?')[0] || '';
+      if (newValue.meta?.json?.browser_history && Array.isArray(newValue.meta.json.browser_history) && newValue.meta.json.browser_history.length > 0) {
+        let lengthBrowserHistory = newValue.meta.json.browser_history.length;
+        fileName.value = newValue.meta.json.browser_history[lengthBrowserHistory-1]?.url?.split('?')[0] || '';
+      } else {
+        fileName.value = 'Browser automation completed';
+      }
       break;
     case 'write_code':
       typeDescription.value = t('lemon.preview.editor');

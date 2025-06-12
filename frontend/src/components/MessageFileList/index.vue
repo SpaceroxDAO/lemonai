@@ -14,8 +14,8 @@ import fileSvg from '@/components/fileClass/fileSvg.vue'
 import emitter from '@/utils/emitter';
     const props = defineProps({
         message: {
-          type: Array,
-          default: () => []
+          type: Object,
+          required: true
         },
       role: {
         type: String,
@@ -25,7 +25,13 @@ import emitter from '@/utils/emitter';
     })
 
 const list = computed(() => {
-  let data = JSON.parse(JSON.stringify(props.message.meta.json));
+  // Safety check: ensure message.meta.json exists and is an array
+  const jsonData = props.message?.meta?.json;
+  if (!jsonData || !Array.isArray(jsonData)) {
+    return [];
+  }
+  
+  let data = JSON.parse(JSON.stringify(jsonData));
   if (data) {
     data.forEach(item => {
       if (item.filepath) {
@@ -35,7 +41,7 @@ const list = computed(() => {
       }
     });
   }
-  return data;
+  return data || [];
 })
 
 // 打开文件

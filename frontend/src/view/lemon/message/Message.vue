@@ -4,7 +4,7 @@
   </div>
   <div v-else-if="message?.meta?.action_type === 'plan'">
     <Markdown :content="content" />
-    <Planing :planing="message?.meta?.json" />
+    <Planing :planing="Array.isArray(message?.meta?.json) ? message?.meta?.json : []" />
   </div>
   <div v-else-if="message?.meta?.action_type === 'update_status'">
     <LoadingOutlined />

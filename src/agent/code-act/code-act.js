@@ -119,7 +119,9 @@ const completeCodeAct = async (task = {}, context = {}) => {
       }
 
       // 5. Execute action
+      console.log(`[CODE-ACT] Executing action type: ${action.type}, uuid: ${action.uuid || 'no-uuid'}`);
       const action_result = await context.runtime.execute_action(action, context, task.id);
+      console.log(`[CODE-ACT] Action result status: ${action_result.status}, uuid: ${action_result.uuid}`);
       if (!context.generate_files) {
         context.generate_files = [];
       }
@@ -138,13 +140,28 @@ const completeCodeAct = async (task = {}, context = {}) => {
         retryCount = 0; // reset retryCount
         const { content } = action_result;
         const task_tool = task.tools[0];
-        if (action.type === task_tool) {
+        console.log(`[CODE-ACT] Action success. Type: ${action.type}, Task tool: ${task_tool}`);
+        // Only mark as complete if browser action actually succeeded
+        if (action.type === task_tool && action_result.status === "success") {
+          console.log(`[CODE-ACT] Task completed successfully for action type: ${action.type}`);
           const finish_result = { params: { message: content } }
           const result = await finish_action(finish_result, context, task.id);
           return result;
         }
         continue;
       } else if (status === "failure") {
+        console.log(`[CODE-ACT] Action failed. Status: ${status}, Comments: ${comments}`);
+        // Send failure status for the current action before retrying
+        if (action_result.uuid) {
+          const failureMsg = Message.format({ 
+            status: 'failure', 
+            content: `Action failed: ${comments}`, 
+            action_type: action.type, 
+            task_id: task.id, 
+            uuid: action_result.uuid 
+          });
+          context.onTokenStream && context.onTokenStream(failureMsg);
+        }
         // use retryHandle to handle retry logic
         const { shouldContinue, result } = retryHandle(retryCount, totalRetryAttempts, maxRetries, maxTotalRetries);
         if (!shouldContinue) {

@@ -9,8 +9,12 @@ import { computed } from 'vue';
 
 const props = defineProps({
   content: {
-    type: Array, // 期望这里是包含 Base64 字符串的数组
-    required: true
+    type: [Array, String], // Allow both Array and String types
+    required: true,
+    validator(value) {
+      // Accept arrays, non-empty strings, or null/undefined
+      return Array.isArray(value) || typeof value === 'string' || value == null;
+    }
   },
   // 增加一个 prop 来指定图片类型，默认为 'image/jpeg'
   imageType: {
@@ -21,15 +25,32 @@ const props = defineProps({
 
 // 使用 computed 属性来动态生成完整的 Data URI
 const formattedImageData = computed(() => {
-  //数组非空校验
-  if (!props.content || props.content.length === 0) {
+  // Handle null, undefined, or empty content
+  if (!props.content) {
     return '';
   }
-  const base64Data = props.content[props.content.length-1]; // 获取 Base64 字符串
+  
+  let base64Data = '';
+  
+  // Handle different content types
+  if (Array.isArray(props.content)) {
+    // Array case - get the last item if array is not empty
+    if (props.content.length === 0) {
+      return '';
+    }
+    base64Data = props.content[props.content.length - 1];
+  } else if (typeof props.content === 'string') {
+    // String case - use directly
+    base64Data = props.content;
+  } else {
+    // Fallback for other types
+    console.warn("ImageDisplay component received unsupported content type:", typeof props.content);
+    return '';
+  }
 
-  if (!base64Data) {
-    console.warn("ImageDisplay component received empty or invalid content.");
-    return ''; // 如果没有数据，返回空字符串
+  // Validate the base64Data
+  if (!base64Data || base64Data.trim() === '') {
+    return '';
   }
 
   // 拼接 Data URI 前缀和 Base64 数据

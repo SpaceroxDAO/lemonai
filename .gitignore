@@ -38,3 +38,11 @@ __pycache__
 # trae
 .trae
 
+# Logs and test files
+*.log
+test_*.js
+test_*.py
+
+# CLAUDE.md (user-specific instructions)
+CLAUDE.md
+

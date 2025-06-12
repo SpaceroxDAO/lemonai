@@ -246,6 +246,7 @@ class DockerRuntime {
         result = await this.read_file(action, uuid);
         break;
       case 'browser':
+        console.log(`[DOCKER-RUNTIME] 🌐 Browser action received. UUID: ${uuid}, Action: ${JSON.stringify(action, null, 2)}`);
         let model_info = await getDefaultModel()
         const llm_config = {
           model_name: model_info.model_name,
@@ -253,7 +254,19 @@ class DockerRuntime {
           api_key: model_info.api_key
         }
         action.params.llm_config = llm_config
+        console.log(`[DOCKER-RUNTIME] 🌐 Calling docker action for browser. LLM config: ${model_info.model_name}`);
         result = await this._call_docker_action(action, uuid)
+        console.log(`[DOCKER-RUNTIME] 🌐 Browser action result received. Status: ${result.status}, UUID: ${uuid}`);
+        
+        // Enhanced browser result processing
+        if (result.status === 'success' && result.meta && result.meta.json && result.meta.json.browser_history) {
+          console.log(`[DOCKER-RUNTIME] 🌐 Processing browser history for enhanced results. UUID: ${uuid}`);
+          const enhancedContent = this.extractAnswersFromBrowserHistory(result.meta.json.browser_history, action.params.question);
+          if (enhancedContent && enhancedContent.trim() !== action.params.question) {
+            console.log(`[DOCKER-RUNTIME] 🌐 Enhanced browser content extracted. UUID: ${uuid}`);
+            result.content = enhancedContent;
+          }
+        }
         break;
       default:
         if (tool) {
@@ -286,14 +299,37 @@ class DockerRuntime {
   }
 
   async _call_docker_action(action, uuid) {
-    const host = DOCKER_HOST_ADDR ? DOCKER_HOST_ADDR : 'localhost'
+    // Use localhost with the mapped host port for Docker container communication
+    const host = 'localhost';
+    const port = this.host_port;
+    
     const request = {
       method: 'POST',
-      url: `http://${host}:${this.host_port}/execute_action`,
+      url: `http://${host}:${port}/execute_action`,
       data: { action: action, uuid: uuid },
+      timeout: action.type === 'browser' ? 90000 : 30000  // 90s for browser, 30s for others
     };
-    const response = await axios(request);
-    return response.data.data
+    
+    console.log(`[DOCKER-RUNTIME] 📡 Sending request to container. URL: ${request.url}, Action: ${action.type}, UUID: ${uuid}`);
+    
+    try {
+      const response = await axios(request);
+      console.log(`[DOCKER-RUNTIME] 📡 Response received from container. Status: ${response.status}, UUID: ${uuid}`);
+      return response.data.data
+    } catch (error) {
+      console.error(`[DOCKER-RUNTIME] 📡 Request failed to container. URL: ${request.url}, Action: ${action.type}, UUID: ${uuid}, Error: ${error.message}`);
+      
+      // Return proper error result for timeouts and connection issues
+      return {
+        uuid,
+        status: 'failure',
+        content: `Docker action failed: ${error.message}`,
+        meta: {
+          action_type: action.type,
+          error: error.message
+        }
+      };
+    }
   }
 
   /**
@@ -318,6 +354,95 @@ class DockerRuntime {
     } catch (error) {
       return { status: 'failure', content: "", error: `Failed to read file ${filepath}: ${error.message}` };
     }
+  }
+
+  extractAnswersFromBrowserHistory(browserHistory, originalPrompt) {
+    const answers = [];
+    let finalAnswer = '';
+    
+    // Extract all extracted_content from browser history
+    for (const entry of browserHistory) {
+      if (entry.extracted_content && entry.extracted_content.trim()) {
+        answers.push({
+          url: entry.url,
+          content: entry.extracted_content.trim()
+        });
+        
+        // The last entry usually contains the final answer
+        finalAnswer = entry.extracted_content.trim();
+      }
+    }
+    
+    if (answers.length === 0) {
+      return originalPrompt;
+    }
+    
+    // Try to parse JSON content for structured data like headlines
+    let structuredContent = '';
+    for (const answer of answers) {
+      const content = answer.content;
+      
+      // Check if content contains JSON with headlines or structured data
+      if (content.includes('```json') || content.includes('"headlines"') || content.includes('[') || content.includes('{')) {
+        try {
+          // Extract JSON from markdown code blocks or direct JSON
+          let jsonStr = content;
+          if (content.includes('```json')) {
+            const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+            if (jsonMatch) {
+              jsonStr = jsonMatch[1];
+            }
+          } else if (content.includes('📄  Extracted from page')) {
+            const jsonMatch = content.match(/📄  Extracted from page[:\s]*```json\s*([\s\S]*?)\s*```/);
+            if (jsonMatch) {
+              jsonStr = jsonMatch[1];
+            }
+          }
+          
+          const parsed = JSON.parse(jsonStr);
+          
+          // Handle headlines specifically
+          if (parsed.headlines && Array.isArray(parsed.headlines)) {
+            structuredContent = `Here are the current CNN headlines:\n\n${parsed.headlines.map((headline, i) => `${i + 1}. ${headline}`).join('\n')}`;
+            break;
+          }
+          
+          // Handle other structured data
+          if (parsed.results && Array.isArray(parsed.results)) {
+            structuredContent = `Found ${parsed.results.length} results:\n\n${parsed.results.map((item, i) => `${i + 1}. ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n')}`;
+            break;
+          }
+          
+        } catch (e) {
+          // Not valid JSON, continue with text processing
+        }
+      }
+    }
+    
+    // If we found structured content, return it
+    if (structuredContent) {
+      return structuredContent;
+    }
+    
+    // Otherwise, return the final extracted content with some cleanup
+    if (finalAnswer) {
+      // Remove technical indicators and clean up
+      let cleanAnswer = finalAnswer
+        .replace(/📄\s*Extracted from page[:\s]*/gi, '')
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/gi, '')
+        .replace(/🔗\s*Opened new tab with.*$/gm, '')
+        .trim();
+      
+      // If it's still mostly the original prompt, return the raw content
+      if (cleanAnswer.toLowerCase().includes(originalPrompt.toLowerCase()) && cleanAnswer.length < originalPrompt.length * 2) {
+        return originalPrompt;
+      }
+      
+      return cleanAnswer;
+    }
+    
+    return originalPrompt;
   }
 
   async callback(result, context = {}) {

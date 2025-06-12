@@ -3,7 +3,7 @@ const axios = require('axios');
 const proxy = {
   protocol: process.env.PROXY_PROTOCOL || 'http',
   host: process.env.PROXY_HOST,
-  port: process.env.PROXY_PROT
+  port: process.env.PROXY_PORT
 }
 
 const resolveAxiosInstance = () => {

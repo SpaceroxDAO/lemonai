@@ -12,7 +12,8 @@ const resolvePlanningPrompt = async (goal, files = [], previousResult = '', conv
   const toolPrompt = await resolveToolPrompt();
   const experiencePrompt = await resolveExperiencePrompt(goal, conversation_id)
   const planningPrompt = `Please act as a task planning expert, analyze the <task goal> from a professional perspective, based on the existing tool capabilities, provide a step-by-step task plan to ensure the goal is achieved, return json array format
-**Important Note:** The 'title' and 'description' fields within the JSON output MUST be in the same language as the <task goal>.
+
+**CRITICAL LANGUAGE REQUIREMENT:** The 'title' and 'description' fields within the JSON output MUST ALWAYS be in English only. Never use Spanish, Chinese, Portuguese, or any other language, regardless of the language used in the <task goal>.
 
 ==== Current System Environment ===
 - Current Time: ${new Date().toLocaleString()}

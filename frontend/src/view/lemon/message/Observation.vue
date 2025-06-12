@@ -4,7 +4,7 @@
       <LoadingOutlined />
       <span style="margin-left: 5px;">{{ command }} {{ information }}</span>
     </div>
-  <div class="observation" :class="status" @click="togglePreview" v-else>
+  <div class="observation" :class="action.status" @click="togglePreview" v-else>
     <div class="observation-details" v-if="information">
       <div class="command-output">
         <component :is="svgHash[action.meta.action_type]" />

@@ -24,22 +24,29 @@ app.use(koaBody({
 // Route handling
 app.use(async ctx => {
   if (ctx.method === 'POST' && ctx.path === '/execute_action') {
-    console.log(ctx.request.body)
     const { action, uuid } = ctx.request.body
+    console.log(`[ACTION-SERVER] 🎯 Received action: ${action.type}, UUID: ${uuid}`);
 
     let result
     switch (action.type) {
       case 'terminal_run':
         action.params.cwd = path.resolve(__dirname, WORKSPACE_DIR, action.params.cwd || '.');
+        console.log(`[ACTION-SERVER] 💻 Executing terminal_run, UUID: ${uuid}`);
         result = await terminal_run(action, uuid);
+        console.log(`[ACTION-SERVER] 💻 Terminal_run completed, Status: ${result.status}, UUID: ${uuid}`);
         break;
       case 'browser':
+        console.log(`[ACTION-SERVER] 🌐 Executing browser action, UUID: ${uuid}`);
         result = await browser(action, uuid);
+        console.log(`[ACTION-SERVER] 🌐 Browser action completed, Status: ${result.status}, UUID: ${uuid}`);
         break;
       default:
+        console.log(`[ACTION-SERVER] ❓ Unknown action type: ${action.type}, UUID: ${uuid}`);
+        result = { status: 'failure', content: `Unknown action type: ${action.type}`, uuid };
         break;
     }
 
+    console.log(`[ACTION-SERVER] 📤 Returning result for ${action.type}, Status: ${result.status}, UUID: ${uuid}`);
     ctx.body = {
       message: 'Received POST /action',
       data: result

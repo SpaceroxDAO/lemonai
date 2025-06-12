@@ -47,13 +47,13 @@ const { Op } = require("sequelize");
  */
 router.post("/", async ({ request, response }) => {
   const body = request.body || {};
-  const { content } = body
+  const { content, title: requestTitle } = body
 
   const conversation_id = uuid.v4();
-  const title = content.slice(0, 20);
+  const title = requestTitle || (content ? content.slice(0, 20) : 'New Conversation');
   const newConversation = await Conversation.create({
     conversation_id: conversation_id,
-    content: content,
+    content: content || '',
     title: title,
     status: 'running'
   });

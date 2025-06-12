@@ -4,13 +4,14 @@ const axios = require('axios');
 const fs = require('node:fs');
 const net = require('node:net');
 
-const PROXY_PORT = 7890;
-const PROXY_PROTOCOL = 'http';
-const PROXY_CONNECT_TIMEOUT = 1500;
+const PROXY_PORT = process.env.PROXY_PORT || 7890;
+const PROXY_PROTOCOL = process.env.PROXY_PROTOCOL || 'http';
+const PROXY_CONNECT_TIMEOUT = process.env.PROXY_CONNECT_TIMEOUT || 500;
+const DISABLE_PROXY = process.env.DISABLE_PROXY === 'true';
 
 /**
- * 检查当前环境是否在 Docker 容器内。
- * @returns {boolean} 如果在 Docker 内则返回 true，否则返回 false。
+ * Check if current environment is in Docker container.
+ * @returns {boolean} Returns true if in Docker, false otherwise.
  */
 function amInDockerEnvironment() {
   try {
@@ -22,10 +23,10 @@ function amInDockerEnvironment() {
 }
 
 /**
- * 异步检查指定的代理服务器是否可连接。
- * @param {string} host 代理服务器主机名。
- * @param {number} port 代理服务器端口。
- * @returns {Promise<boolean>} 如果可连接则返回 true，否则返回 false。
+ * Async check if specified proxy server is connectable.
+ * @param {string} host Proxy server hostname.
+ * @param {number} port Proxy server port.
+ * @returns {Promise<boolean>} Returns true if connectable, false otherwise.
  */
 async function checkProxyConnectivity(host, port) {
   return new Promise((resolve) => {
@@ -34,7 +35,7 @@ async function checkProxyConnectivity(host, port) {
       socket.end();
       resolve(true);
     });
-    socket.on('error', (/* err */) => { // 捕获错误，但对于此函数只需返回 false
+    socket.on('error', (/* err */) => { // Capture error, but for this function just return false
       socket.destroy();
       resolve(false);
     });
@@ -46,27 +47,64 @@ async function checkProxyConnectivity(host, port) {
   });
 }
 
-const axiosInstancePromise = (async () => {
+let axiosInstancePromise = null;
+
+const createAxiosInstance = async () => {
+  // Strategy A: Environment variable override
+  if (DISABLE_PROXY) {
+    console.log('[Axios Init] Proxy disabled via DISABLE_PROXY environment variable. Creating instance without proxy.');
+    return axios.create();
+  }
+
+  // Strategy B: Use environment variables for proxy configuration
+  if (process.env.PROXY_HOST) {
+    const proxyConfig = {
+      protocol: process.env.PROXY_PROTOCOL || 'http',
+      host: process.env.PROXY_HOST,
+      port: process.env.PROXY_PORT || PROXY_PORT,
+    };
+    console.log(`[Axios Init] Using environment proxy configuration: ${proxyConfig.host}:${proxyConfig.port}`);
+    return axios.create({ proxy: proxyConfig });
+  }
+
+  // Strategy C: Docker-aware configuration with fallback
   const isInDocker = amInDockerEnvironment();
   const proxyHost = isInDocker ? 'host.docker.internal' : '127.0.0.1';
 
-  console.log(`[Axios Init] ENV: ${isInDocker ? 'Docker' : '宿主机'}. 代理主机: ${proxyHost}:${PROXY_PORT}`);
+  console.log(`[Axios Init] ENV: ${isInDocker ? 'Docker' : 'Host'}. Proxy host: ${proxyHost}:${PROXY_PORT}`);
 
-  const isProxyReachable = await checkProxyConnectivity(proxyHost, PROXY_PORT);
+  // Strategy D: Timeout-protected connectivity check
+  try {
+    const isProxyReachable = await Promise.race([
+      checkProxyConnectivity(proxyHost, PROXY_PORT),
+      new Promise(resolve => setTimeout(() => resolve(false), PROXY_CONNECT_TIMEOUT))
+    ]);
 
-  if (isProxyReachable) {
-    const proxyConfig = {
-      protocol: PROXY_PROTOCOL,
-      host: proxyHost,
-      port: PROXY_PORT,
-    };
-    console.log(`[Axios 初始化] 代理 ${proxyHost}:${PROXY_PORT} 可连接。创建带代理的 Axios 实例。`);
-    return axios.create({ proxy: proxyConfig });
-  } else {
-    console.warn(`[Axios 初始化] 代理 ${proxyHost}:${PROXY_PORT} 不可连接。创建不带代理的 Axios 实例。`);
+    if (isProxyReachable) {
+      const proxyConfig = {
+        protocol: PROXY_PROTOCOL,
+        host: proxyHost,
+        port: PROXY_PORT,
+      };
+      console.log(`[Axios Init] Proxy ${proxyHost}:${PROXY_PORT} connectable. Creating axios instance with proxy.`);
+      return axios.create({ proxy: proxyConfig });
+    } else {
+      console.warn(`[Axios Init] Proxy ${proxyHost}:${PROXY_PORT} not connectable. Creating axios instance without proxy.`);
+      return axios.create();
+    }
+  } catch (error) {
+    // Strategy E: Error handling fallback
+    console.warn(`[Axios Init] Error checking proxy connectivity: ${error.message}. Creating axios instance without proxy.`);
     return axios.create();
   }
-})();
+};
+
+const getAxiosInstance = async () => {
+  if (!axiosInstancePromise) {
+    axiosInstancePromise = createAxiosInstance();
+  }
+  return axiosInstancePromise;
+};
 
 class GeminiLLM extends BaseLLM {
 
@@ -87,7 +125,7 @@ class GeminiLLM extends BaseLLM {
     // const { model = 'gemini-pro' } = options;
     const model = this.model;
 
-    const instance = await axiosInstancePromise;
+    const instance = await getAxiosInstance();
 
     // reference: https://ai.google.dev/gemini-api/docs/get-started/tutorial?lang=rest#stream_generate_content
     const config = {

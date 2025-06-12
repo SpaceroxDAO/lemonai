@@ -21,7 +21,7 @@ const activeAgents = new Map();
  *       - Agent
  *     summary: Execute code task and push results in real-time via SSE
  *     description: |
- *       Receives client-submitted `question`, constructs a task, and calls `completeCodeAct` to execute code.
+ *       Receives client-submitted `goal` (or legacy `question`), constructs a task, and calls `completeCodeAct` to execute code.
  *       Based on `responseType` (default SSE), streams each token to the frontend.
  *     requestBody:
  *       required: true
@@ -32,14 +32,17 @@ const activeAgents = new Map();
  *             properties:
  *               question:
  *                 type: string
- *                 description: User's question or instruction
+ *                 description: User's question or instruction (deprecated, use 'goal' instead)
+ *               goal:
+ *                 type: string
+ *                 description: User's goal or instruction
  *               conversation_id:
  *                 type: string
  *                 description: Conversation ID, used to identify the current conversation
  *               fileIds:
  *                 type:json
  *             required:
- *               - question
+ *               - goal
  *     responses:
  *       200:
  *         description: 流式响应开启
@@ -52,7 +55,9 @@ const activeAgents = new Map();
 router.post("/run", async (ctx, next) => {
   const { request, response } = ctx;
   const body = request.body || {};
-  let { question, conversation_id, fileIds } = body;
+  let { question, goal, conversation_id, fileIds } = body;
+  // Support both 'question' and 'goal' parameters, with 'goal' taking precedence
+  question = goal || question;
   let files = [];
 
   const dir_name = 'Conversation_' + conversation_id.slice(0, 6);
